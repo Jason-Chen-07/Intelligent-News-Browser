@@ -12,6 +12,7 @@ const elements = {
   conflictList: document.getElementById("conflict-list"),
   sourceGrid: document.getElementById("source-grid"),
   timeline: document.getElementById("timeline"),
+  briefList: document.getElementById("brief-list"),
 };
 
 function renderList(target, items) {
@@ -48,6 +49,10 @@ function renderSources(articles) {
             <span class="feed-badge">RSS</span>
           </div>
           <h3 class="headline">${article.title}</h3>
+          <div class="badge-row">
+            <span class="pill meta">Source & time</span>
+            <span class="pill unique">Outlet angle</span>
+          </div>
           <div class="meta-row">
             <span>${new Date(article.published).toLocaleString()}</span>
           </div>
@@ -56,6 +61,31 @@ function renderSources(articles) {
         </article>
       `
     )
+    .join("");
+}
+
+function renderBrief(briefItems = []) {
+  elements.briefList.innerHTML = briefItems
+    .map((item) => {
+      const sources =
+        item.sources && item.sources.length
+          ? `<div class="brief-sources">${item.sources
+              .map(
+                (s) =>
+                  `<a href="${s.link}" target="_blank" rel="noreferrer">${s.name}</a>`
+              )
+              .join(" · ")}</div>`
+          : "";
+      return `
+        <div class="brief-item ${item.type}">
+          <div class="brief-bar"></div>
+          <div>
+            <p class="brief-text">${item.text}</p>
+            ${sources}
+          </div>
+        </div>
+      `;
+    })
     .join("");
 }
 
@@ -98,6 +128,13 @@ function renderResponse(data) {
   renderList(elements.consensusList, data.analysis.consensus);
   renderList(elements.conflictList, data.analysis.conflicts);
   renderSources(data.articles);
+  // Prefer claims with levels; fall back to brief.
+  const claims = (data.analysis.claims || []).map((c) => ({
+    type: c.level === "green" ? "consensus" : c.level === "yellow" ? "unique" : "conflict",
+    text: `${c.text} (支持${c.support}源)`,
+    sources: c.sources || [],
+  }));
+  renderBrief(claims.length ? claims : data.analysis.brief || []);
   renderTimeline(data.analysis.timeline);
 }
 

@@ -25,10 +25,16 @@ USER_AGENT = "Intelligent-News-Browser/0.1"
 RSS_FEEDS = [
     {"name": "BBC World", "url": "https://feeds.bbci.co.uk/news/world/rss.xml"},
     {"name": "BBC Technology", "url": "https://feeds.bbci.co.uk/news/technology/rss.xml"},
-    {"name": "Reuters World", "url": "https://feeds.reuters.com/Reuters/worldNews"},
-    {"name": "Reuters Technology", "url": "https://feeds.reuters.com/reuters/technologyNews"},
+    {"name": "AP Top Stories", "url": "https://www.associatedpress.com/apf-rss/TopNews"},
+    {"name": "AP Technology", "url": "https://www.associatedpress.com/apf-rss/Technology"},
     {"name": "NPR World", "url": "https://feeds.npr.org/1004/rss.xml"},
     {"name": "NPR Business", "url": "https://feeds.npr.org/1006/rss.xml"},
+    # Japanese sources
+    {"name": "NHK World", "url": "https://www3.nhk.or.jp/rss/news/cat0.xml"},
+    {"name": "Asahi", "url": "https://www.asahi.com/rss/asahi/newsheadlines.rdf"},
+    # Chinese / Intl Chinese
+    {"name": "BBC 中文", "url": "https://feeds.bbci.co.uk/zhongwen/simp/rss.xml"},
+    {"name": "FT 中文", "url": "https://www.ftchinese.com/rss/feed"},
 ]
 
 STOPWORDS = {
@@ -62,6 +68,15 @@ STOPWORDS = {
     "with",
 }
 
+SOURCE_TYPES = {
+    "official": {"keywords": ["ministry", "政府", "政府公报", "省政府", "白宫", "国务院", "官方", "警察", "police", "agency"], "weight": 3.0},
+    "mainstream": {"keywords": ["bbc", "reuters", "ap", "npr", "asahi", "nikkei", "nhk", "ft", "financial times", "guardian", "cnn", "bloomberg"], "weight": 2.2},
+    "financial": {"keywords": ["wsj", "wall street journal", "bloomberg", "ft", "marketwatch", "cnbc"], "weight": 2.0},
+    "analyst": {"keywords": ["analysis", "analyst", "venture", "capital", "a16z", "investor", "semianalysis", "stratechery"], "weight": 1.6},
+    "blog": {"keywords": ["blog", "substack", "medium"], "weight": 1.0},
+}
+
+SOURCE_FALLBACK_WEIGHT = 1.0
 
 @dataclass
 class Article:
@@ -93,16 +108,18 @@ def normalize_text(value: str) -> str:
 
 
 def tokenize(value: str) -> list[str]:
+    # Support English words and contiguous CJK characters (length>=2).
+    tokens = re.findall(r"[a-zA-Z][a-zA-Z0-9'-]+|[\u4e00-\u9fff]{2,}", value.lower())
     return [
         token
-        for token in re.findall(r"[a-zA-Z][a-zA-Z0-9'-]+", value.lower())
-        if token not in STOPWORDS and len(token) > 2
+        for token in tokens
+        if (len(token) > 2 and token not in STOPWORDS)
     ]
 
 
 def split_sentences(value: str) -> list[str]:
-    parts = re.split(r"(?<=[.!?])\s+|;\s+", value)
-    return [normalize_text(part) for part in parts if len(normalize_text(part)) > 30]
+    parts = re.split(r"(?<=[.!?。！？])\s+|;\s+|，(?=[^，]{15,})", value)
+    return [normalize_text(part) for part in parts if len(normalize_text(part)) > 24]
 
 
 def parse_datetime(value: str | None) -> datetime:
@@ -339,6 +356,146 @@ def build_conflicts(articles: list[Article]) -> list[str]:
     return conflicts[:3]
 
 
+def guess_source_type(source_name: str) -> str:
+    lower = source_name.lower()
+    for type_name, config in SOURCE_TYPES.items():
+        if any(keyword in lower for keyword in config["keywords"]):
+            return type_name
+    return "mainstream"
+
+
+def extract_claims(articles: list[Article]) -> list[dict[str, Any]]:
+    claims: list[dict[str, Any]] = []
+    for article in articles:
+        sentences = split_sentences(f"{article.title}. {article.summary}")
+        for sentence in sentences:
+            tokens = tokenize(sentence)
+            if len(tokens) < 4:
+                continue
+            claims.append(
+                {
+                    "text": sentence,
+                    "tokens": set(tokens),
+                    "source": article.source,
+                    "source_type": guess_source_type(article.source),
+                    "link": article.link,
+                    "published": article.published,
+                }
+            )
+    return claims
+
+
+def cluster_claims(claims: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    clusters: list[dict[str, Any]] = []
+    for claim in claims:
+        matched = None
+        for cluster in clusters:
+            inter = len(cluster["tokens"] & claim["tokens"])
+            union = len(cluster["tokens"] | claim["tokens"])
+            similarity = inter / union if union else 0
+            if similarity >= 0.48:
+                matched = cluster
+                break
+        if matched:
+            matched["tokens"] |= claim["tokens"]
+            matched["sources"].append(
+                {
+                    "name": claim["source"],
+                    "type": claim["source_type"],
+                    "link": claim["link"],
+                    "published": claim["published"].isoformat(),
+                }
+            )
+            if len(claim["text"]) < len(matched["text"]):
+                matched["text"] = claim["text"]
+        else:
+            clusters.append(
+                {
+                    "text": claim["text"],
+                    "tokens": set(claim["tokens"]),
+                    "sources": [
+                        {
+                            "name": claim["source"],
+                            "type": claim["source_type"],
+                            "link": claim["link"],
+                            "published": claim["published"].isoformat(),
+                        }
+                    ],
+                }
+            )
+    return clusters
+
+
+def score_cluster(cluster: dict[str, Any]) -> tuple[str, float]:
+    unique_sources = {src["name"] for src in cluster["sources"]}
+    type_counts: dict[str, int] = {}
+    score = 0.0
+    for src in cluster["sources"]:
+        type_counts[src["type"]] = type_counts.get(src["type"], 0) + 1
+        weight = SOURCE_TYPES.get(src["type"], {}).get("weight", SOURCE_FALLBACK_WEIGHT)
+        score += weight
+
+    # Level rules
+    official = type_counts.get("official", 0)
+    mainstream = type_counts.get("mainstream", 0)
+    financial = type_counts.get("financial", 0)
+    total = len(unique_sources)
+
+    level = "red"
+    if total >= 2 and (official or mainstream >= 1):
+        level = "green"
+    elif total >= 1 and (official or mainstream or financial):
+        level = "yellow"
+    elif total >= 2:
+        level = "yellow"
+    else:
+        level = "red"
+
+    return level, score
+
+
+def build_claims(articles: list[Article]) -> list[dict[str, Any]]:
+    raw_claims = extract_claims(articles)
+    clusters = cluster_claims(raw_claims)
+
+    enriched: list[dict[str, Any]] = []
+    for cluster in clusters:
+        level, score = score_cluster(cluster)
+        enriched.append(
+            {
+                "text": trim_phrase(cluster["text"], 220),
+                "level": level,
+                "support": len({src["name"] for src in cluster["sources"]}),
+                "sources": sorted(cluster["sources"], key=lambda s: s["published"], reverse=True)[:6],
+                "score": score,
+            }
+        )
+
+    enriched.sort(key=lambda c: (c["level"] == "green", c["support"], c["score"]), reverse=True)
+    return enriched[:10]
+
+
+def build_brief(articles: list[Article], consensus: list[str], conflicts: list[str]) -> list[dict[str, str]]:
+    brief: list[dict[str, str]] = []
+    if articles:
+        brief.append(
+            {
+                "type": "meta",
+                "text": f"Analyzed {len(articles)} articles from {len({a.source for a in articles})} sources.",
+            }
+        )
+    for item in consensus:
+        brief.append({"type": "consensus", "text": item})
+    for item in conflicts:
+        brief.append({"type": "conflict", "text": item})
+
+    # Add a couple of unique angles from article titles to surface diversity.
+    for article in articles[:2]:
+        brief.append({"type": "unique", "text": f"Angle from {article.source}: {trim_phrase(article.title, 160)}"})
+
+    return brief[:8]
+
+
 def build_timeline(articles: list[Article]) -> list[dict[str, str]]:
     ordered = sorted(articles, key=lambda article: article.published)
     return [
@@ -353,6 +510,8 @@ def build_timeline(articles: list[Article]) -> list[dict[str, str]]:
 def heuristic_analysis(query: str, articles: list[Article]) -> dict[str, Any]:
     topic = infer_topic(query, articles)
     conflicts = build_conflicts(articles)
+    consensus = build_consensus(query, articles)
+    claims = build_claims(articles)
     return {
         "overview": {
             "title": f"Coverage snapshot for {topic}",
@@ -365,8 +524,10 @@ def heuristic_analysis(query: str, articles: list[Article]) -> dict[str, Any]:
                 else "No coverage window available"
             ),
         },
-        "consensus": build_consensus(query, articles),
+        "consensus": consensus,
         "conflicts": conflicts or ["No strong conflicts were detected automatically; this usually means the feed summaries are thin or still converging."],
+        "claims": claims,
+        "brief": build_brief(articles, consensus, conflicts or []),
         "timeline": build_timeline(articles),
     }
 
@@ -451,6 +612,7 @@ def openai_analysis(query: str, articles: list[Article]) -> dict[str, Any]:
     parsed.setdefault("consensus", [])
     parsed.setdefault("conflicts", [])
     parsed.setdefault("timeline", [])
+    parsed.setdefault("claims", [])
     parsed.setdefault(
         "overview",
         {
@@ -487,6 +649,9 @@ def build_response(query: str, mode: str) -> dict[str, Any]:
             if mode == "openai":
                 analysis["overview"]["summary"] += " AI mode failed, so the result below is the heuristic fallback."
 
+    # Always attach locally computed claims so they are available even in AI mode.
+    analysis["claims"] = analysis.get("claims") or build_claims(articles)
+    analysis["brief"] = analysis.get("brief") or build_brief(articles, analysis.get("consensus", []), analysis.get("conflicts", []))
     return {
         "query": query,
         "modeRequested": mode,

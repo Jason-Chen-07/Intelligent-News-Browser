@@ -233,6 +233,41 @@ h2 {
   gap: 14px;
 }
 
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 10px 0 6px;
+}
+
+.pill {
+  padding: 7px 12px;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.pill.consensus {
+  background: rgba(62, 106, 87, 0.16);
+  color: var(--ink-green);
+}
+
+.pill.conflict {
+  background: rgba(142, 59, 46, 0.16);
+  color: var(--ink-red);
+}
+
+.pill.unique {
+  background: rgba(185, 125, 34, 0.16);
+  color: var(--ink-gold);
+}
+
+.pill.meta {
+  background: rgba(25, 76, 115, 0.14);
+  color: var(--ink-blue);
+}
+
 .bullet-list li,
 .conflict-list li {
   padding: 16px 18px;
@@ -247,6 +282,54 @@ h2 {
 
 .conflict-list li {
   border-left: 6px solid var(--ink-red);
+}
+
+.brief-list {
+  display: grid;
+  gap: 12px;
+}
+
+.brief-item {
+  display: grid;
+  grid-template-columns: 10px 1fr;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.65);
+}
+
+.brief-item.consensus .brief-bar {
+  background: var(--ink-green);
+}
+.brief-item.conflict .brief-bar {
+  background: var(--ink-red);
+}
+.brief-item.unique .brief-bar {
+  background: var(--ink-gold);
+}
+.brief-item.meta .brief-bar {
+  background: var(--ink-blue);
+}
+
+.brief-text {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.brief-sources {
+  margin-top: 6px;
+  font-size: 0.85rem;
+}
+
+.brief-sources a {
+  color: var(--ink-blue);
+  text-decoration: none;
+}
+
+.brief-sources a:hover {
+  text-decoration: underline;
 }
 
 .source-grid {
@@ -276,6 +359,13 @@ h2 {
   margin-bottom: 12px;
 }
 
+.badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0 6px;
+}
+
 .outlet {
   font-weight: 800;
 }
@@ -293,6 +383,22 @@ h2 {
   margin: 0 0 10px;
   font-size: 1.15rem;
   line-height: 1.3;
+}
+
+.tag-consensus {
+  color: var(--ink-green);
+}
+
+.tag-conflict {
+  color: var(--ink-red);
+}
+
+.tag-unique {
+  color: var(--ink-gold);
+}
+
+.tag-meta {
+  color: var(--ink-blue);
 }
 
 .meta-row {
