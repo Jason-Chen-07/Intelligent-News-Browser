@@ -788,8 +788,19 @@ class NewsRequestHandler(SimpleHTTPRequestHandler):
 
 
 def main() -> None:
-    server = ThreadingHTTPServer((HOST, PORT), NewsRequestHandler)
-    print(f"Serving Intelligent News Browser at http://{HOST}:{PORT}")
+    try:
+        server = ThreadingHTTPServer((HOST, PORT), NewsRequestHandler)
+    except PermissionError:
+        # Fallback: pick an ephemeral port automatically.
+        server = ThreadingHTTPServer((HOST, 0), NewsRequestHandler)
+        print("Requested port not permitted; falling back to an available port.")
+    except OSError:
+        # If in use, also fall back to an available port.
+        server = ThreadingHTTPServer((HOST, 0), NewsRequestHandler)
+        print("Requested port unavailable; falling back to an available port.")
+
+    actual_port = server.server_address[1]
+    print(f"Serving Intelligent News Browser at http://{HOST}:{actual_port}")
     server.serve_forever()
 
 
