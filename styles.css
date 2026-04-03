@@ -305,6 +305,12 @@ h2 {
 .brief-item.conflict .brief-bar {
   background: var(--ink-red);
 }
+.brief-item.consensus.light .brief-bar {
+  background: rgba(62, 106, 87, 0.6);
+}
+.brief-item.consensus.strong .brief-bar {
+  background: var(--ink-green);
+}
 .brief-item.unique .brief-bar {
   background: var(--ink-gold);
 }
@@ -321,6 +327,27 @@ h2 {
 .brief-sources {
   margin-top: 6px;
   font-size: 0.85rem;
+}
+
+.tag {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+.tag.consensus {
+  background: rgba(62, 106, 87, 0.16);
+  color: var(--ink-green);
+}
+.tag.conflict {
+  background: rgba(142, 59, 46, 0.16);
+  color: var(--ink-red);
+}
+.tag.unique {
+  background: rgba(185, 125, 34, 0.16);
+  color: var(--ink-gold);
 }
 
 .brief-sources a {

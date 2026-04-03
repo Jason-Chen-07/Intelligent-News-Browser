@@ -21,6 +21,7 @@ PORT = int(os.getenv("PORT", "8000"))
 MAX_ARTICLES = 8
 REQUEST_TIMEOUT = 12
 USER_AGENT = "Intelligent-News-Browser/0.1"
+DEFAULT_DAYS = 3
 
 RSS_FEEDS = [
     {"name": "BBC World", "url": "https://feeds.bbci.co.uk/news/world/rss.xml"},
@@ -35,6 +36,38 @@ RSS_FEEDS = [
     # Chinese / Intl Chinese
     {"name": "BBC 中文", "url": "https://feeds.bbci.co.uk/zhongwen/simp/rss.xml"},
     {"name": "FT 中文", "url": "https://www.ftchinese.com/rss/feed"},
+    # Global & regional mainstream
+    {"name": "The Guardian World", "url": "https://www.theguardian.com/world/rss"},
+    {"name": "Al Jazeera All", "url": "https://www.aljazeera.com/xml/rss/all.xml"},
+    {"name": "CNN Top Stories", "url": "https://rss.cnn.com/rss/cnn_topstories.rss"},
+    {"name": "CNBC World", "url": "https://www.cnbc.com/id/100727362/device/rss/rss.html"},
+    {"name": "Reuters World", "url": "https://feeds.reuters.com/Reuters/worldNews"},
+    {"name": "Nikkei Asia", "url": "https://asia.nikkei.com/rss"},
+    {"name": "Financial Times Technology", "url": "https://www.ft.com/technology?format=rss"},
+    {"name": "Politico Picks", "url": "https://www.politico.com/rss/politicopicks.xml"},
+    {"name": "Foreign Affairs", "url": "https://www.foreignaffairs.com/rss.xml"},
+    {"name": "DW All", "url": "https://rss.dw.com/rdf/rss-en-all"},
+    {"name": "CBC Top Stories", "url": "https://www.cbc.ca/cmlink/rss-topstories"},
+    {"name": "Euractiv", "url": "https://www.euractiv.com/feed/"},
+    {"name": "SCMP Top", "url": "https://www.scmp.com/rss/91/feed"},
+    {"name": "Straits Times World", "url": "https://www.straitstimes.com/news/world/rss.xml"},
+    {"name": "Yonhap English", "url": "https://en.yna.co.kr/landing/rss?cts=001"},
+    {"name": "The Hindu", "url": "https://www.thehindu.com/feeder/default.rss"},
+    {"name": "Times of India", "url": "https://timesofindia.indiatimes.com/rss.cms"},
+    {"name": "Der Spiegel International", "url": "https://www.spiegel.de/international/index.rss"},
+    {"name": "El Pais English", "url": "https://english.elpais.com/rss/elpais/portada.xml"},
+    {"name": "Financial Post", "url": "https://financialpost.com/feed/"},
+    # Tech / analysis / venture voices
+    {"name": "TechCrunch", "url": "https://techcrunch.com/feed/"},
+    {"name": "Ars Technica", "url": "http://feeds.arstechnica.com/arstechnica/index"},
+    {"name": "Wired", "url": "https://www.wired.com/feed/rss"},
+    {"name": "MIT Technology Review", "url": "https://www.technologyreview.com/feed/"},
+    {"name": "VentureBeat", "url": "https://venturebeat.com/feed/"},
+    {"name": "a16z Blog", "url": "https://a16z.com/feed/"},
+    {"name": "Not Boring", "url": "https://www.notboring.co/feed"},
+    {"name": "SemiAnalysis", "url": "https://semianalysis.substack.com/feed"},
+    {"name": "War on the Rocks", "url": "https://warontherocks.com/feed/"},
+    {"name": "Defense One", "url": "https://www.defenseone.com/rss/all/"},
 ]
 
 STOPWORDS = {
@@ -70,10 +103,10 @@ STOPWORDS = {
 
 SOURCE_TYPES = {
     "official": {"keywords": ["ministry", "政府", "政府公报", "省政府", "白宫", "国务院", "官方", "警察", "police", "agency"], "weight": 3.0},
-    "mainstream": {"keywords": ["bbc", "reuters", "ap", "npr", "asahi", "nikkei", "nhk", "ft", "financial times", "guardian", "cnn", "bloomberg"], "weight": 2.2},
-    "financial": {"keywords": ["wsj", "wall street journal", "bloomberg", "ft", "marketwatch", "cnbc"], "weight": 2.0},
-    "analyst": {"keywords": ["analysis", "analyst", "venture", "capital", "a16z", "investor", "semianalysis", "stratechery"], "weight": 1.6},
-    "blog": {"keywords": ["blog", "substack", "medium"], "weight": 1.0},
+    "mainstream": {"keywords": ["bbc", "reuters", "ap", "npr", "asahi", "nikkei", "nhk", "ft", "financial times", "guardian", "cnn", "bloomberg", "al jazeera", "politico", "foreign affairs", "dw", "cbc", "euractiv", "scmp", "straits times", "yonhap", "hindu", "times of india", "spiegel", "el pais"], "weight": 2.2},
+    "financial": {"keywords": ["wsj", "wall street journal", "bloomberg", "ft", "marketwatch", "cnbc", "financial post"], "weight": 2.0},
+    "analyst": {"keywords": ["analysis", "analyst", "venture", "capital", "a16z", "investor", "semianalysis", "stratechery", "not boring", "mit technology review", "ars technica", "wired"], "weight": 1.6},
+    "blog": {"keywords": ["blog", "substack", "medium", "warontherocks", "defense one", "not boring"], "weight": 1.0},
 }
 
 SOURCE_FALLBACK_WEIGHT = 1.0
@@ -120,6 +153,43 @@ def tokenize(value: str) -> list[str]:
 def split_sentences(value: str) -> list[str]:
     parts = re.split(r"(?<=[.!?。！？])\s+|;\s+|，(?=[^，]{15,})", value)
     return [normalize_text(part) for part in parts if len(normalize_text(part)) > 24]
+
+
+def translate_query(query: str) -> str:
+    if all(ord(ch) < 128 for ch in query):
+        return query
+
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        return query
+
+    body = {
+        "model": os.getenv("OPENAI_MODEL", "gpt-5"),
+        "input": [
+            {
+                "role": "system",
+                "content": "Translate the user topic to concise English for news search. Return only the translated phrase, no quotes.",
+            },
+            {"role": "user", "content": query},
+        ],
+    }
+
+    request = Request(
+        "https://api.openai.com/v1/responses",
+        data=json.dumps(body).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=REQUEST_TIMEOUT) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        translated = extract_response_text(payload).strip()
+        return translated or query
+    except Exception:  # noqa: BLE001
+        return query
 
 
 def parse_datetime(value: str | None) -> datetime:
@@ -235,8 +305,9 @@ def score_article(article: Article, query_terms: list[str]) -> int:
     return sum(3 if term in article.title.lower() else 1 for term in query_terms if term in haystack)
 
 
-def fetch_articles(query: str) -> tuple[list[Article], list[str]]:
+def fetch_articles(query: str, days: int) -> tuple[list[Article], list[str]]:
     query_terms = tokenize(query)
+    cutoff = datetime.now(UTC) - timedelta(days=max(1, days))
     matched_articles: list[Article] = []
     all_articles: list[Article] = []
     errors: list[str] = []
@@ -252,6 +323,8 @@ def fetch_articles(query: str) -> tuple[list[Article], list[str]]:
                     if key in seen:
                         continue
                     seen.add(key)
+                    if article.published < cutoff:
+                        continue
                     all_articles.append(article)
                     if query_terms and score_article(article, query_terms) == 0:
                         continue
@@ -442,11 +515,13 @@ def score_cluster(cluster: dict[str, Any]) -> tuple[str, float]:
     total = len(unique_sources)
 
     level = "red"
-    if total >= 2 and (official or mainstream >= 1):
-        level = "green"
-    elif total >= 1 and (official or mainstream or financial):
-        level = "yellow"
+    if total >= 4 and (official or mainstream >= 1):
+        level = "green_strong"
+    elif total >= 2 and (official or mainstream >= 1):
+        level = "green_light"
     elif total >= 2:
+        level = "yellow"
+    elif total >= 1 and (official or mainstream or financial):
         level = "yellow"
     else:
         level = "red"
@@ -465,6 +540,7 @@ def build_claims(articles: list[Article]) -> list[dict[str, Any]]:
             {
                 "text": trim_phrase(cluster["text"], 220),
                 "level": level,
+                "levelDisplay": "strong consensus" if level == "green_strong" else "consensus" if level == "green_light" else "caution" if level == "yellow" else "unverified",
                 "support": len({src["name"] for src in cluster["sources"]}),
                 "sources": sorted(cluster["sources"], key=lambda s: s["published"], reverse=True)[:6],
                 "score": score,
@@ -625,8 +701,10 @@ def openai_analysis(query: str, articles: list[Article]) -> dict[str, Any]:
     return parsed
 
 
-def build_response(query: str, mode: str) -> dict[str, Any]:
-    articles, errors = fetch_articles(query)
+def build_response(query: str, mode: str, days: int) -> dict[str, Any]:
+    translated = translate_query(query)
+    combined_query = " ".join({q for q in [query.strip(), translated.strip()] if q})
+    articles, errors = fetch_articles(combined_query, days)
     if not articles:
         return {
             "query": query,
@@ -678,9 +756,14 @@ class NewsRequestHandler(SimpleHTTPRequestHandler):
             mode = params.get("mode", ["auto"])[0].strip().lower()
             if mode not in {"auto", "heuristic", "openai"}:
                 mode = "auto"
+            days = params.get("days", [str(DEFAULT_DAYS)])[0]
+            try:
+                days_int = max(1, min(30, int(days)))
+            except ValueError:
+                days_int = DEFAULT_DAYS
 
             try:
-                payload = build_response(query, mode)
+                payload = build_response(query, mode, days_int)
                 self.send_json(payload)
             except Exception as exc:  # noqa: BLE001
                 self.send_json({"error": str(exc)}, status=500)

@@ -2,6 +2,7 @@ const elements = {
   form: document.getElementById("search-form"),
   queryInput: document.getElementById("query-input"),
   modeSelect: document.getElementById("mode-select"),
+  daysInput: document.getElementById("days-input"),
   eventTitle: document.getElementById("event-title"),
   eventSummary: document.getElementById("event-summary"),
   modeUsed: document.getElementById("mode-used"),
@@ -81,6 +82,7 @@ function renderBrief(briefItems = []) {
           <div class="brief-bar"></div>
           <div>
             <p class="brief-text">${item.text}</p>
+            ${item.levelDisplay ? `<div class="tag ${item.type}">${item.levelDisplay}</div>` : ""}
             ${sources}
           </div>
         </div>
@@ -129,11 +131,17 @@ function renderResponse(data) {
   renderList(elements.conflictList, data.analysis.conflicts);
   renderSources(data.articles);
   // Prefer claims with levels; fall back to brief.
-  const claims = (data.analysis.claims || []).map((c) => ({
-    type: c.level === "green" ? "consensus" : c.level === "yellow" ? "unique" : "conflict",
-    text: `${c.text} (支持${c.support}源)`,
-    sources: c.sources || [],
-  }));
+  const claims = (data.analysis.claims || []).map((c) => {
+    let type = "unique";
+    if (c.level === "green_strong" || c.level === "green_light") type = "consensus";
+    else if (c.level === "red") type = "conflict";
+    return {
+      type,
+      text: `${c.text}（支持 ${c.support} 源）`,
+      sources: c.sources || [],
+      levelDisplay: c.levelDisplay || "",
+    };
+  });
   renderBrief(claims.length ? claims : data.analysis.brief || []);
   renderTimeline(data.analysis.timeline);
 }
@@ -143,7 +151,9 @@ async function runAnalysis(query, mode) {
 
   try {
     const response = await fetch(
-      `/api/search?q=${encodeURIComponent(query)}&mode=${encodeURIComponent(mode)}`
+      `/api/search?q=${encodeURIComponent(query)}&mode=${encodeURIComponent(mode)}&days=${encodeURIComponent(
+        elements.daysInput.value || "3"
+      )}`
     );
 
     if (!response.ok) {

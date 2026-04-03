@@ -64,9 +64,11 @@ Without `OPENAI_API_KEY`, the app still works and falls back to heuristic analys
 - `heuristic`: RSS + local comparison only
 - `openai`: require OpenAI analysis, but still falls back with an error note if the request fails
 
-## Current Feed Sources
+## Current Feed Sources (excerpt)
 
-The prototype is configured with several public RSS feeds, including BBC, Reuters, and NPR topic feeds.
+BBC World · BBC Technology · AP Top Stories · AP Technology · NPR World · NPR Business · NHK World · Asahi · BBC 中文 · FT 中文 · The Guardian World · Al Jazeera · CNN Top Stories · CNBC World · Reuters World · Nikkei Asia · FT Technology · Politico Picks · Foreign Affairs · TechCrunch · Ars Technica · Wired · MIT Technology Review · VentureBeat · a16z Blog · Not Boring · SemiAnalysis · War on the Rocks · Defense One
+
+You can add more by editing `RSS_FEEDS` in `server.py`.
 
 ## Important Notes
 
