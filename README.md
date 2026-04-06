@@ -83,3 +83,4 @@ You can add more by editing `RSS_FEEDS` in `server.py`.
 3. Add source filters and side-by-side article diff views.
 4. Persist previous comparisons so users can revisit evolving stories.
 5. Move feed configuration into a separate JSON or admin UI.
+6.check the py net connection
